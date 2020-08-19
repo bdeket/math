@@ -59,7 +59,12 @@
  _mpfr_size_limb_t
  _mpfr
  _mpfr-pointer
- (struct-out mpfr))
+ (struct-out mpfr)
+ thread-safe?
+ new-mpfr
+ mpfr-get-d
+ bigfloat-custom-write
+ bigfloat->vector-for-hash)
 
 ;; Arithmetic, comparison, and other functions are provided by the macros that create them
 
@@ -165,10 +170,12 @@
            (parameterize ([bf-precision (integer-length sig)])
              (sig+exp->bigfloat sig exp)))]))
 
-(define (bigfloat-hash x recur-hash)
+(define (bigfloat->vector-for-hash x)
   (let*-values ([(x)  (bfcanonicalize x)]
                 [(sig exp)  (bigfloat->sig+exp x)])
-    (recur-hash (vector (bigfloat-signbit x) sig exp))))
+    (vector (bigfloat-signbit x) sig exp)))
+(define (bigfloat-hash x recur-hash)
+  (recur-hash (bigfloat->vector-for-hash x)))
 
 (define bigfloat-deserialize
   (case-lambda

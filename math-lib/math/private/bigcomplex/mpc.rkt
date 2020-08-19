@@ -18,13 +18,14 @@
                   bitwise-first-bit-set)
          "../bigfloat/gmp.rkt"
          "../bigfloat/utils.rkt"
-         "mpc-lib.rkt"
-         (only-in "mpfr.rkt"
+         ;"../bigfloat/mpfr.rkt"
+         (only-in "../bigfloat/mpfr.rkt"
                   thread-safe?
                   _mpfr
                   _prec_t
                   _mpfr-pointer
                   _rnd_t
+                  mpfr-lib
                   make-mpfr
                   new-mpfr
                   real->bigfloat
@@ -32,6 +33,7 @@
                   bigfloat?
                   bf-rounding-mode
                   bf-precision
+                  bigfloat-precision
                   bigfloat->vector-for-hash
                   bf
                   bfrint
@@ -51,56 +53,60 @@
                   bf=?
                   bfrational?
                   bfinfinite?
-                  bfinteger?))
+                  bfinteger?
+                  mpfr-get-version))
 
-#;(provide
+(provide
  ;; Parameters
- bf-rounding-mode
- bf-min-precision
- bf-max-precision
- bf-precision
+ bc-rounding-mode
+ bc-min-precision
+ bc-max-precision
+ bc-precision
  ;; Type predicate
- (rename-out [mpfr? bigfloat?])
- bfcanonicalize
+ (rename-out [mpc? bigcomplex?])
  ;; Accessors
- bigfloat-precision
- bigfloat-signbit
- bigfloat-exponent
- bigfloat-significand
+ bcreal-part
+ bcimag-part
+ bigcomplex-precision
  ;; Conversion to and from Real
- sig+exp->bigfloat
- flonum->bigfloat
- integer->bigfloat
- rational->bigfloat
- real->bigfloat
- bigfloat->sig+exp
- bigfloat->flonum
- bigfloat->integer
- bigfloat->rational
- bigfloat->real
+ flonum->bigcomplex
+ integer->bigcomplex
+ bigfloat->bigcomplex
+ number->bigcomplex
+ bigcomplex->float-complex
+ bigcomplex->integer-complex
+ bigcomplex->exact-number
+ bigcomplex->number
  ;; String conversion
- bigfloat->string
- string->bigfloat
+ bigcomplex->string
+ string->bigcomplex
  ;; Main constructor
- bf
- bigfloat-deserialize-info
+ bc
+ bcmake-rectangular
+ bcmake-polar
+ bigcomplex-deserialize-info
  ;; Low-level stuff
- mpfr-get-version
- mpfr-lib
- get-mpfr-fun
- _rnd_t
+ mpc-get-version
+ mpc-lib
+ get-mpc-fun
+ _mpc_rnd_t
  _prec_t
- _sign_t
- _exp_t
- _mpfr_size_limb_t
- _mpfr
- _mpfr-pointer
- (struct-out mpfr))
+ _mpc
+ _mpc-pointer
+ (struct-out mpc))
 
 ;; Arithmetic, comparison, and other functions are provided by the macros that create them
 
 ;; ===================================================================================================
 ;; Setup/takedown
+
+(define-runtime-path libmpc-so
+  (case (system-type)
+    [(macosx) (error "TODO")'(so "libmpc.???.dylib")]
+    [(windows) (error "TODO")'(so "libmpc-???.dll")]
+    [else '(so "libmpc")]))
+
+(define mpc-lib (ffi-lib libmpc-so '("3" "") #:fail (λ () #f)))
 
 ;; The mpfr_buildopt_tls_p() function indicates whether mpfr was compiled as thread-safe:
 ;; The mpc library provides everything from mpfr
@@ -112,7 +118,7 @@
 
 
 ;; TODO not sure if this is necessary, mpc does not have an equivalent
-(define mpfr-free-cache (get-mpc-fun 'mpfr_free_cache (_fun -> _void)))
+(define mpc-free-cache (get-mpc-fun 'mpfr_free_cache (_fun -> _void)))
 (when mpc-lib
   ;; Register `mpfr-free-cache` as shutdown action once within each place
   (let ([ht (get-place-table)])
@@ -122,11 +128,11 @@
          (lambda ()
            (parameterize ([current-custodian root-custodian])
              (register-custodian-shutdown
-              mpfr-free-cache ; acts as a "random" object for a shutdown handle
+              mpc-free-cache ; acts as a "random" object for a shutdown handle
               (λ (free)
                 ;; The direct reference here is important, since custodian holds only
                 ;; a weak reference to shutdown handle:
-                (mpfr-free-cache))))
+                (mpc-free-cache))))
            (hash-set! ht 'mpfr-finalization-registered? #t)))))))
 
 ;; ===================================================================================================
@@ -174,6 +180,7 @@
   (parameterize ([bf-rounding-mode (imag-rounding)]
                  [bf-precision (bc-precision)])
     body ...))
+
 ;; ===================================================================================================
 ;; _mpc type (bigcomplex)
 
@@ -183,10 +190,8 @@
   (define x2r (mpc-re x2))
   (define x2i (mpc-im x2))
   (and
-   (or (and (bfnan? x1r) (bfnan? x2r))
-       (bf=? x1r x2r))
-   (or (and (bfnan? x1i) (bfnan? x2i))
-       (bf=? x1i x2i))))
+   (equal? x1r x2r)
+   (equal? x1i x2i)))
 
 
 (define (bigcomplex-hash x recur-hash)
@@ -194,63 +199,44 @@
   (define vi (bigfloat->vector-for-hash (mpc-im x)))
   (recur-hash (vector-append vr vi)))
 
-#|
-(define bigfloat-deserialize
-  (case-lambda
-    [(p x)
-     (unless (exact-integer? p)
-       (raise-argument-error 'bigfloat-deserialize "Integer" 0 p x))
-     (unless (or (string? x) (real? x))
-       (raise-argument-error 'bigfloat-deserialize "(U String Real)" 1 p x))
-     (parameterize ([bf-precision p])
-       (bf x))]
-    [(p sig exp)
-     (unless (exact-integer? p)
-       (raise-argument-error 'bigfloat-deserialize "Integer" 0 p sig exp))
-     (unless (exact-integer? sig)
-       (raise-argument-error 'bigfloat-deserialize "Integer" 1 p sig exp))
-     (unless (exact-integer? exp)
-       (raise-argument-error 'bigfloat-deserialize "Integer" 2 p sig exp))
-     (parameterize ([bf-precision p])
-       (sig+exp->bigfloat sig exp))]))
+(define (bigcomplex-deserialize re im)
+  (parameterize ([bc-precision (bigfloat-precision re)])
+    (bigfloat->bigcomplex re im)))
 
-(define bigfloat-deserialize-info
+(define bigcomplex-deserialize-info
   (make-deserialize-info
-   bigfloat-deserialize
+   bigcomplex-deserialize
    #f))
 
-(define bigfloat-serialize-info
+(define bigcomplex-serialize-info
   (make-serialize-info
-   (λ (x)
-     (cond [(bfzero? x)      (vector (bigfloat-precision x)
-                                     (if (zero? (bigfloat-signbit x)) 0.0 -0.0))]
-           [(bfnan? x)       (vector (bigfloat-precision x)
-                                     +nan.0)]
-           [(bfinfinite? x)  (vector (bigfloat-precision x)
-                                     (if (zero? (bigfloat-signbit x)) +inf.0 -inf.0))]
-           [else  (define-values (sig exp) (bigfloat->sig+exp (bfcanonicalize x)))
-                  (vector (bigfloat-precision x) sig exp)]))
-   #'bigfloat-deserialize-info
+   (λ (x) (vector (mpc-re x)(mpc-im x)))
+   #'bigcomplex-deserialize-info
    #f
    (or (current-load-relative-directory) 
        (current-directory))))
-|#
+
 
 ;; _mpc: two multi-precision floats (the main data type)
 (define-cstruct _mpc ([re _mpfr] [im _mpfr])
+  #:malloc-mode 'nonatomic
   #:property prop:custom-print-quotable 'never
   #:property prop:custom-write (λ (b port mode) (bigcomplex-custom-write b port mode))
   #:property prop:equal+hash (list bigcomplex-equal? bigcomplex-hash bigcomplex-hash)
-  ;#:property prop:serializable bigcomplex-serialize-info
+  #:property prop:serializable bigcomplex-serialize-info
   )
 
 (define sizeof-mpc (ctype-sizeof _mpc))
+
 ;#|
 
 ;; ===================================================================================================
 ;; Foreign functions
 
 (define mpc-get-version (get-mpc-fun 'mpc_get_version (_fun -> _string)))
+(define mpc/mpfr-get-version (get-mpc-fun 'mpfr_get_version (_fun -> _string)))
+(unless (string=? (mpc/mpfr-get-version) (mpfr-get-version))
+  (println "Warning: bigcomplex and bigfloat are using different versions of mpfr!"))
 
 ;; Allocation/initialization
 (define mpc-set-nan (get-mpc-fun 'mpc_set_nan (_fun _mpc-pointer -> _void)))
@@ -282,7 +268,7 @@
 ;; ===================================================================================================
 ;; Construction
 
-;; new-mpc integer -> bigcomplex
+;; new-mpc: integer -> bigcomplex
 (define (new-mpc prec)
   (make-mpc (new-mpfr prec) (new-mpfr prec)))
 
@@ -290,8 +276,11 @@
 ;; Accessors
 
 ;; real and imag parts : bigcomplex -> bigfloat
-(define bfcreal-part mpc-re)
-(define bfcimag-part mpc-im)
+(define bcreal-part mpc-re)
+(define bcimag-part mpc-im)
+(define (bigcomplex-precision bc)
+  (cons (bigfloat-precision (mpc-re bc))
+        (bigfloat-precision (mpc-im bc))))
 
 ;; ===================================================================================================
 ;; Conversion from Racket data types to bigcomplex
@@ -367,8 +356,8 @@
                     (for-imag (bigfloat->rational (mpc-im x)))))
 
 ; bigfloat->real : bigfloat -> (or exact-rational flonum)
-(define (bigfloat->real x)
-  (cond [(bfrational? x)  (bigcomplex->exact-number x)]
+(define (bigcomplex->number x)
+  (cond [(bcrational? x)  (bigcomplex->exact-number x)]
         [else  (bigcomplex->float-complex x)]))
 
 ;; ===================================================================================================
@@ -420,11 +409,11 @@
 
 (define (bigcomplex-custom-write x port mode)
   (cond
-    [(and mpc-lib gmp-lib)
+    [(and mpc-lib mpfr-lib gmp-lib)
      (write-string "(bc " port)
-     (bigfloat-custom-write (mpc-re x) port mode)
+     (for-real (bigfloat-custom-write (mpc-re x) port mode))
      (write-string " " port)
-     (bigfloat-custom-write (mpc-im x) port mode)
+     (for-imag (bigfloat-custom-write (mpc-im x) port mode))
      (write-string ")" port)]
     [else
      (write-string "#<_mpc>" port)]))
@@ -515,7 +504,7 @@
 
 (provide bcreal-sgn bcimag-sgn bcround)
 (begin-for-syntax
-  (set! 1ary-funs (list* #'bcimag-sgn #'bcimag-sgn #'bcround 1ary-funs)))
+  (set! 1ary-funs (list* #'bcround 1ary-funs)))
 
 
 (define (bcsum zs)
@@ -560,6 +549,9 @@
  [bcmagnitude 'mpc_abs]
  [bcnorm 'mpc_norm])
 
+(begin-for-syntax
+  (set! 1ary-bf-funs (list* #'bcreal-part #'bcreal-sgn #'bcimag-part #'bcimag-sgn 1ary-bf-funs)))
+
 ;; Unary functions bc->bc bc
 
 (define-for-syntax 1ary2-funs (list))
@@ -599,7 +591,7 @@
 (define-syntax-rule (provide-1ary-preds [name c-name] ...)
   (begin (provide-1ary-pred name c-name) ...))
 
-#| (provide-1ary-preds) |#
+#| (provide-1ary-preds) NON DEFINED|#
 
 (define (bcnan? z) (or (bfnan? (mpc-re z))(bfnan? (mpc-im z))))
 (define (bcinfinite? z) (or (bfinfinite? (mpc-re z))(bfinfinite? (mpc-im z))))
@@ -609,7 +601,7 @@
 
 (provide bcnan? bcinfinite? bcrational? bcinteger? bczero?)
 (begin-for-syntax
-  (set! 1ary-preds (list* #'bcnan? #'bcinfinite? #'bcrational #'bcinteger? #'bczero? 1ary-funs)))
+  (set! 1ary-preds (list* #'bcnan? #'bcinfinite? #'bcrational? #'bcinteger? #'bczero? 1ary-preds)))
 
 ;; ===================================================================================================
 ;; Binary functions bc bc -> bc
@@ -620,10 +612,10 @@
 (define-syntax-rule (provide-2ary-fun name c-name)
   (begin
     (define cfun
-      (get-mpc-fun c-name (_fun _mpc-pointer _mpc-pointer _mpc-pointer _rnd_t -> _int)))
+      (get-mpc-fun c-name (_fun _mpc-pointer _mpc-pointer _mpc-pointer _mpc_rnd_t -> _int)))
     (define (name x1 x2)
       (define y (new-mpc (bc-precision)))
-      (cfun y x1 x2 (bc-rounding-mode))
+      (cfun y x1 x2 (current-rounding-mode))
       y)
     (provide name)
     (begin-for-syntax (set! 2ary-funs (cons #'name 2ary-funs)))))
@@ -638,26 +630,38 @@
  [bcdiv 'mpc_div]
  [bcexpt 'mpc_pow])
 
+(begin-for-syntax
+  (set! 2ary-funs (remove* (list #'bcadd #'bcsub #'bcmul #'bcdiv)
+                           2ary-funs
+                           free-identifier=?)))
+
 ;; ===================================================================================================
 ;; Binary predicates
 
 (define mpc-cmp (get-mpc-fun 'mpc_cmp (_fun _mpc-pointer _mpc-pointer -> _int)))
+(define mpc-cmp-abs (get-mpc-fun 'mpc_cmp_abs (_fun _mpc-pointer _mpc-pointer -> _int)))
 
 (define (bc=? z1 z2)(zero? (mpc-cmp z1 z2)))
+(define (bcmagnitude=? z1 z2)(zero? (mpc-cmp-abs z1 z2)))
+(define (bcmagnitude<? z1 z2)(= -1 (mpc-cmp-abs z1 z2)))
+(define (bcmagnitude<=? z1 z2)(<= (mpc-cmp-abs z1 z2) 0))
+(define (bcmagnitude>? z1 z2)(= 1 (mpc-cmp-abs z1 z2)))
+(define (bcmagnitude>=? z1 z2)(<= 0 (mpc-cmp-abs z1 z2)))
+
 
 (define (bcquadrant z1 [z2 (force 0.bc)])
   (case (mpc-cmp z2 z1)
-    [(0) 0]
-    [(1) quadrant-R-]
-    [(2) quadrant-R+]
-    [(4) quadrant-I-]
-    [(5) quadrant-C]
-    [(6) quadrant-D]
-    [(8) quadrant-I+]
-    [(9) quadrant-B]
+    [(0)  0]
+    [(1)  quadrant-R-]
+    [(2)  quadrant-R+]
+    [(4)  quadrant-I-]
+    [(5)  quadrant-C]
+    [(6)  quadrant-D]
+    [(8)  quadrant-I+]
+    [(9)  quadrant-B]
     [(10) quadrant-A]))
 
-(define (bcin-quadrant? q z1 [z2 (bc 0)])
+(define (bcin-quadrant? q z1 [z2 (force 0.bc)])
   (and ((if (list? q) member equal?) (bcquadrant z1 z2) q) #t))
 (define quadrant-A 'q++)
 (define quadrant-B 'q-+)
@@ -680,9 +684,11 @@
 (define quadrant-0<I (list quadrant-A quadrant-B quadrant-I+))
 (define quadrant-0<=I (list* quadrant-A quadrant-B quadrant-I+ quadrant-R))
 (define quadrant-I<0 (list quadrant-C quadrant-D quadrant-I-))
-(define quadrant-I<=0 (list quadrant-C quadrant-D quadrant-I- quadrant-R))
+(define quadrant-I<=0 (list* quadrant-C quadrant-D quadrant-I- quadrant-R))
 
-(provide bc=? bcquadrant bcin-quadrant?
+(provide bc=?
+         bcmagnitude=? bcmagnitude<? bcmagnitude<=? bcmagnitude>? bcmagnitude>=?
+         bcquadrant bcin-quadrant?
          quadrant-A quadrant-B quadrant-C quadrant-D quadrant-R+ quadrant-R- quadrant-I+ quadrant-I-
          quadrant-R quadrant-I quadrant-A+ quadrant-B+ quadrant-C+ quadrant-D+
          quadrant-R<0 quadrant-R<=0 quadrant-0<R quadrant-0<=R
@@ -702,17 +708,37 @@
       (set! consts (cons #'name consts)))))
 
 (define-bc-constant 0.bc 2 (integer->bigcomplex 0))
+(define-bc-constant 1.bc 2 (integer->bigcomplex 1))
+(define-bc-constant i.bc 2 (integer->bigcomplex 0 1))
+(define-bc-constant -1.bc 2 (integer->bigcomplex 1))
+(define-bc-constant -i.bc 2 (integer->bigcomplex 0 1))
+(define-bc-constant +nan.bc 2 (number->bigcomplex +nan.0+nan.0i))
+
+
+;; ===================================================================================================
+;; Other
+
+(define mpc-fma (get-mpc-fun 'mpc_fma (_fun _mpc-pointer _mpc-pointer _mpc-pointer _mpc-pointer _mpc_rnd_t -> _int)))
+(define (bcmuladd z1 z2 z3)
+  (define y (new-mpc (bc-precision)))
+  (mpc-fma y z1 z2 z3 (current-rounding-mode))
+  y)
+
+(define mpc-rootofunity (get-mpc-fun 'mpc_rootofunity (_fun _mpc-pointer _ulong _ulong _mpc_rnd_t -> _int)))
+(define (bcexp-2pii n)
+  (define y (new-mpc (bc-precision)))
+  (mpc-rootofunity y (denominator n) (numerator n) (current-rounding-mode))
+  y)
+
+(provide bcmuladd bcexp-2pii)
 
 #|
 TODO
 Comparison functions
   mpc_comp_si_si mpc_cmp_si
 * mpc_cmp_abs
-Basic arithmetic functions
-* mpc_fma bc bc bc -> bc
-* mpc_rootofunity int int -> bc
-* mpc_urandom
 
+Basic arithmetic functions
   mpc_add_ui mpc_add_fr
   mpc_sub_fr mpc_fr_sub mpc_sub_ui mpc_ui_sub mpc_ui_ui_sub
   mpc_mul_ui mpc_mul_si mpc_mul_fr mpc_mul_i
@@ -720,5 +746,8 @@ Basic arithmetic functions
   mpc_mul_2ui mpc_mul_2si
   mpc_div_2ui mpc_div_2si
   mpc_pow_d mpc_pow_ld mpc_pow_si mpc_pow_z mpc_pow_fr
+
+Other
+  mpc_urandom (bc gmp_randstate_t -> int);; done in fct of bfrandom, see bigcomplex-mpc
 |#
 
