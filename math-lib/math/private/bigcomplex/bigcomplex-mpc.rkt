@@ -32,7 +32,7 @@
  [bigfloat->bigcomplex  (->* (Bigfloat) ((Option Bigfloat)) Bigcomplex)]
  [string->bigcomplex    (String -> (U #f Bigcomplex))]
  ;; Main constructor
- [bc  (case-> ((U String Number) -> Bigcomplex)
+ [bc  (case-> ((U String Number Bigfloat) -> Bigcomplex)
               ((U Real Bigfloat) (U Real Bigfloat) -> Bigcomplex))]
  [bcmake-rectangular ((U Real Bigfloat) (U Real Bigfloat) -> Bigcomplex)]
  [bcmake-polar ((U Real Bigfloat) (U Real Bigfloat) -> Bigcomplex)]

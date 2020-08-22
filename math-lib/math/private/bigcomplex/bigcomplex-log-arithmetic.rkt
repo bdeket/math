@@ -39,21 +39,22 @@
   (define p (bc-precision))
   (println d)
   (if (bf< m (bf 1e-3))
-      ;; Lazy, this should be done better!
-      (bcsum
-       (reverse
-        (parameterize ([bc-precision (* 2 p)])
-          (for/fold ([s : (Listof Bigcomplex) (list z)]
-                     [z^i : Bigcomplex (bc* z z)]
-                     [t : Bigfloat m]
-                     [n : Integer 2]
-                     #:result s)
-                    ([i (in-naturals 3)]
-                     #:break (bf< t d))
-            (values (cons (bc/ z^i (bc n)) s)
-                    (bc* z^i z)
-                    (bf* t m)
-                    (* n i))))))
+      ;; Probably this should be done better!
+      (bccopy
+       (parameterize ([bc-precision (* 2 p)])
+         (bcsum
+          (reverse
+           (for/fold ([s : (Listof Bigcomplex) (list z)]
+                      [z^i : Bigcomplex (bc* z z)]
+                      [t : Bigfloat m]
+                      [n : Integer 2]
+                      #:result s)
+                     ([i (in-naturals 3)]
+                      #:break (bf< t d))
+             (values (cons (bc/ z^i (bc n)) s)
+                     (bc* z^i z)
+                     (bf* t m)
+                     (* n i)))))))
       (bc- (bcexp z) 1.bc)))
 
 (: bclog* (Bigcomplex Bigcomplex -> Bigcomplex))

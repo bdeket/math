@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require (only-in "mpc.rkt" consts)
+(require (only-in "mpc.rkt" consts 0ary-funs)
          "bigcomplex-constants.rkt"
          racket/promise
          (for-syntax racket/base racket/syntax syntax/strip-context))
@@ -29,3 +29,4 @@
 (define-syntax-rule (apply0 x) (x))
 
 (req/prov-constants "bigcomplex-constants.rkt" consts force)
+(req/prov-constants "bigcomplex-constants.rkt" 0ary-funs apply0)

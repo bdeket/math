@@ -54,7 +54,9 @@
                   bfrational?
                   bfinfinite?
                   bfinteger?
-                  mpfr-get-version))
+                  mpfr-get-version
+                  pi.bf
+                  0.bf))
 
 (provide
  ;; Parameters
@@ -428,6 +430,8 @@
     (cond [(string? v)
              (define x (string->bigcomplex v))
              (if x x (error 'bf "expected well-formed decimal number; given ~e" v))]
+          [(bigfloat? v)
+           (bigfloat->bigcomplex v)]
           [else
            (number->bigcomplex v)])]
    [(r i) (bcmake-rectangular r i)]))
@@ -489,7 +493,8 @@
  [bcatan 'mpc_atan]
  [bcasinh 'mpc_asinh]
  [bcacosh 'mpc_acosh]
- [bcatanh 'mpc_atanh])
+ [bcatanh 'mpc_atanh]
+ [bccopy 'mpc_set])
 
 (begin-for-syntax
   (set! 1ary-funs (remove* (list #'bcneg) 1ary-funs free-identifier=?)))
@@ -713,6 +718,18 @@
 (define-bc-constant -1.bc 2 (integer->bigcomplex 1))
 (define-bc-constant -i.bc 2 (integer->bigcomplex 0 1))
 (define-bc-constant +nan.bc 2 (number->bigcomplex +nan.0+nan.0i))
+
+(define-for-syntax 0ary-funs (list))
+(provide (for-syntax 0ary-funs))
+
+(define-syntax-rule (define-bc-maker name expr)
+  (begin
+    (define (name) expr)
+    (provide name)
+    (begin-for-syntax
+      (set! 0ary-funs (cons #'name 0ary-funs)))))
+
+(define-bc-maker pi.bc (bigfloat->bigcomplex (for-real (pi.bf))))
 
 
 ;; ===================================================================================================
