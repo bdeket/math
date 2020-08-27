@@ -169,8 +169,7 @@ TODO
 (define (fc+ . [z : Float-Complex *]) (fcsum z))
 
 ;; subtraction
-(: fc- (case-> (Float-Complex -> Float-Complex)
-               (Float-Complex Float-Complex * -> Float-Complex)))
+(: fc- (Float-Complex Float-Complex * -> Float-Complex))
 (define fc-
   (case-lambda
     [(z) (make-fcrectangular (fl* -1.0 (fcreal-part z))
@@ -186,10 +185,7 @@ TODO
 
 
 ;; multiplication
-(: fc* (case-> (-> 1.0+0.0i)
-               (Float-Complex ->  Float-Complex)
-               (Float-Complex Float-Complex -> Float-Complex)
-               (Float-Complex * -> Float-Complex)))
+(: fc* (Float-Complex * -> Float-Complex))
 (define fc*
   (case-lambda
     [() 1.0+0.0i]
@@ -225,7 +221,7 @@ TODO
              #:result (make-fcrectangular (flsum rs)
                                           (flsum is)))
             ([i (in-range (expt 2 len))])
-(println (list i rs is))
+;(println (list i rs is))
     (define-values (r p)
       (for/fold ([r : Integer 0]
                  [p : (Listof Flonum) '()])
@@ -376,6 +372,7 @@ TODO
          (full a* b* c* d*)
          (full (- b*) a* (- d*) c*))]))
 
+(: fc/ (Float-Complex Float-Complex * -> Float-Complex))
 (define fc/
   (case-lambda
     [([z : Float-Complex])

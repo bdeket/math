@@ -34,11 +34,11 @@
         (abnormal1 a b cd)))
   
   (define (abnormal1 [a : Flonum][b : Flonum][cd : Flonum]) : Flonum
-    (println (list a b cd))
+;(println (list a b cd))
     (fl* a (fl+ b (fl/ cd a))))
   
   (define (abnormal2 [a : Flonum][b : Flonum][c : Flonum][d : Flonum]) : Flonum
-    (println (list a b c d))
+;(println (list a b c d))
     (fl* a (fl+ b (fl* (fl/ c a) d))))
   
   (cond
