@@ -11,7 +11,9 @@
 ;; Flonum helpers
 ;;**************************************************************************************************
 (define (fl± [a : Flonum]) : Flonum (fl* -1.0 a))
+
 (define flzero? (ann zero? (-> Flonum Boolean)))
+
 (define (fl*+* [a : Flonum][b : Flonum][c : Flonum][d : Flonum]) : Flonum
   (define ab (* a b))
   (define cd (* c d))
@@ -56,9 +58,11 @@
          cd)]
     ;underflow for both
     ;there is a chance that their sum might still be a measurable value
-    [(and (flzero? ab) (not (or (flzero? a) (flzero? b))))
+    [(and (flzero? ab) (not (or (flzero? a) (flzero? b)))
+          (fl< (flabs cd) 4.450147717014403e-308));smallest flonum that would register something
      (abnormal fl> (λ ([x : Flonum])(fl< x 1.0)) a b c d cd)]
-    [(and (flzero? cd) (not (or (flzero? c) (flzero? d))))
+    [(and (flzero? cd) (not (or (flzero? c) (flzero? d)))
+          (fl< (flabs ab) 4.450147717014403e-308))
      (abnormal fl> (λ ([x : Flonum])(fl< x 1.0)) c d a b ab)]
     ;Normal path
     [else (normal ab cd)]))
