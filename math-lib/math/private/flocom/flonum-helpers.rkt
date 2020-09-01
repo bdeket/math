@@ -1,10 +1,12 @@
 #lang typed/racket/base
 
 (require (for-syntax racket/base)
-         racket/list)
+         racket/list
+         (only-in math/base pi))
 (require "../../flonum.rkt")
 
 (provide (all-from-out "../../flonum.rkt")
+         pi
          fl± flzero? fl*+* flprod fl<=* flmin* flmax*)
 
 ;;**************************************************************************************************

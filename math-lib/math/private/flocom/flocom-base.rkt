@@ -61,14 +61,17 @@ lg* lg/ lgprod lg+ lg- lgsum lg1+ lg1-
 (define (fc [z : Number]) : Float-Complex
   (make-flrectangular (fl (real-part z))(fl (imag-part z))))
 
-(define-syntax make-fcrectangular (make-rename-transformer #'make-flrectangular))
+(: make-fcrectangular (Flonum Flonum -> Float-Complex))
+(define make-fcrectangular make-flrectangular)
 
 (define (make-fcpolar [e : Flonum][α : Flonum]) : Float-Complex
   (make-rectangular (fl* e (flcos α))
                     (fl* e (flsin α))))
 
-(define-syntax fcreal-part (make-rename-transformer #'flreal-part))
-(define-syntax fcimag-part (make-rename-transformer #'flimag-part))
+(: fcreal-part (Float-Complex -> Flonum))
+(define fcreal-part flreal-part)
+(: fcimag-part (Float-Complex -> Flonum))
+(define fcimag-part flimag-part)
 
 (define fcmagnitude (ann magnitude (Float-Complex -> Flonum)))
 (define (fcangle [z : Float-Complex]) : Flonum
@@ -199,19 +202,38 @@ TODO
 
 ;; accumulating summing errors
 (define (fcprod [zs : (Listof Float-Complex)]) : Float-Complex
-  (define-values (small big)(partition (λ ([z : Float-Complex])(fl< (fcmagnitude z) 1.0)) zs))
-  (let loop ([small ((inst sort Float-Complex) small fl< #:key fcmagnitude)]
-             [big ((inst sort Float-Complex) big fl> #:key fcmagnitude)]
+  (cond
+    [(empty? zs) +1.0+0.0i]
+    [(empty? (cdr zs)) (car zs)]
+    [(empty? (cddr zs)) (fc* (car zs) (cadr zs))]
+    [else
+     (define-values (small big*)(partition (λ ([z : Float-Complex])(fl< (fcmagnitude z) 1.0)) zs))
+     (define-values (inf big)(partition (λ ([z : Float-Complex])(fcinfinite? z)) big*))
+     (cond
+       [(and (empty? small)(empty? big))
+        (foldr fc* (car inf)(cdr inf))]
+       [else
+        (define a
+          (let loop : Float-Complex
+            ([small ((inst sort Float-Complex) small fl< #:key fcmagnitude)]
+             [big ((inst sort Float-Complex) big
+                                             (λ ([x : Flonum][y : Flonum]) (cond
+                                                                             [(and (flrational? x)(flrational? y))
+                                                                              (fl> x y)]
+                                                                             [(flrational? x) #t]
+                                                                             [else #f]))
+                                             #:key fcmagnitude)]
              [z : Float-Complex 1.0+0.0i])
 ;(println (list small big z))
-    (cond
-      [(and (empty? small)(empty? big)) z]
-      [(empty? small) (foldr fc* z big)];fc* only works on 2 arguments / (it's using this function for more)
-      [(empty? big) (foldr fc* z small)]
-      [(fl< (fcmagnitude z) 1.0)
-       (loop small (cdr big) (fc* (car big) z))]
-      [else
-       (loop (cdr small) big (fc* (car small) z))])))
+            (cond
+              [(and (empty? small)(empty? big)) z]
+              [(empty? small) (foldr fc* z big)];fc* only works on 2 arguments / (it's using this function for more)
+              [(empty? big) (foldr fc* z small)]
+              [(fl< (fcmagnitude z) 1.0)
+               (loop small (cdr big) (fc* (car big) z))]
+              [else
+               (loop (cdr small) big (fc* (car small) z))])))
+        (foldr fc* a inf)])]))
 
 ;; chance of over/underflow
 (define (fcprod_alt [zs : (Listof Float-Complex)]) : Float-Complex
@@ -405,6 +427,23 @@ TODO
              (loop small (cdr big) (fc/_2 (car big) z))]
             [else
              (loop (cdr small) big (fc/_2 (car small) z))])]))]))
+
+;;**************************************************************************************************
+;; exp
+;;**************************************************************************************************
+(define (fcexp [z : Float-Complex]) : Float-Complex
+  (cond
+    [(eq? (fcreal-part z) -inf.0) 0.0+0.0i]
+    [else (exp z)]))
+
+;;**************************************************************************************************
+;; log
+;;**************************************************************************************************
+(define (fclog [z : Float-Complex]) : Float-Complex
+  (define l (log z))
+  (if(and (flzero? (fcimag-part z)) (fl<= (fcreal-part z) 0.0))
+     (make-fcrectangular (fcreal-part l) pi)
+     l))
 
 ;;**************************************************************************************************
 ;; Error checking

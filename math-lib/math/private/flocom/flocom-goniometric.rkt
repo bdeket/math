@@ -14,7 +14,8 @@ fccscpix fcsecpix fccotpix
 (require "flocom-base.rkt"
          "flonum-helpers.rkt")
 
-(provide fcsin fccos fctan)
+;;**************************************************************************************************
+(provide fcsin fccos fctan fccsc fcsec fccot)
 
 (define (fcsin [z : Float-Complex]) : Float-Complex
   (define a (fcreal-part z)) (define b (fcimag-part z))
@@ -36,6 +37,48 @@ fccscpix fcsecpix fccotpix
                           (flsgn 2b)
                           (fl/ (flsinh 2b) den))))
 
+;1/sin(z) : cosecant
+(define (fccsc [z : Float-Complex]) : Float-Complex
+  (define a (fcreal-part z)) (define b (fcimag-part z))
+  (define den (fl- (flcos (fl* 2.0 a)) (flcosh (fl* 2.0 b))))
+  (make-fcrectangular (fl/ (fl* -2.0 (fl* (flsin a) (flcosh b))) den)
+                      (fl/ (fl*  2.0 (fl* (flcos a) (flsinh b))) den)))
+
+;1/cos(z) : secant
+(define (fcsec [z : Float-Complex]) : Float-Complex
+  (define a (fcreal-part z)) (define b (fcimag-part z))
+  (define den (fl+ (flcos (fl* 2.0 a)) (flcosh (fl* 2.0 b))))
+  (make-fcrectangular (fl/ (fl* 2.0 (fl* (flcos a) (flcosh b))) den)
+                      (fl/ (fl* 2.0 (fl* (flsin a) (flsinh b))) den)))
+
+;1/tan(z) : cotangent
+(define (fccot [z : Float-Complex]) : Float-Complex
+  (define 2a (fl* 2.0 (fcreal-part z))) (define 2b (fl* 2.0 (fcimag-part z)))
+  (define den (fl- (flcos 2a) (flcosh 2b)))
+  (make-fcrectangular (fl/ (fl± (flsin 2a)) den)
+                      (fl/ (flsinh 2b) den)))
+
+;;**************************************************************************************************
+
 ;asin
 ;series at 0?
 ;continued fraction: (sqrt 1 - z²)*[z/(1-(2z²/(3-2z²/(5-12z²/(7-12z²/(9... ]
+
+;;**************************************************************************************************
+(provide fcsinh fccosh fctanh)
+
+(define (fcsinh [z : Float-Complex]) : Float-Complex
+  (define a (fcreal-part z)) (define b (fcimag-part z))
+  (make-fcrectangular (fl* (flsinh a) (flcos b))
+                      (fl* (flcosh a) (flsin b))))
+
+(define (fccosh [z : Float-Complex]) : Float-Complex
+  (define a (fcreal-part z)) (define b (fcimag-part z))
+  (make-fcrectangular (fl* (flcosh a) (flcos b))
+                      (fl* (flsinh a) (flsin b))))
+
+(define (fctanh [z : Float-Complex]) : Float-Complex
+  (define 2a (fl* 2.0 (fcreal-part z))) (define 2b (fl* 2.0 (fcimag-part z)))
+  (define den (fl+ (flcosh 2a) (flcos 2b)))
+  (make-fcrectangular (fl/ (flsinh 2a) den)
+                      (fl/ (flsin 2b) den)))
