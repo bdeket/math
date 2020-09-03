@@ -9,8 +9,7 @@ fchypot ...?
 
 fcround fcfloor fcceiling fctruncate
 
-fclog fcexp fcsqrt
-flexpt
+fcsqrt
 fclog1p
 fcexpm1
 fcexpt1p
@@ -50,13 +49,16 @@ lg* lg/ lgprod lg+ lg- lgsum lg1+ lg1-
 (require (for-syntax racket/base)
          racket/list)
 (require "flonum-helpers.rkt")
+(module+ test
+  (require typed/rackunit))
 
 ;;**************************************************************************************************
 ;; Constructor / accessor / conversion
 ;;**************************************************************************************************
 (provide fc make-fcrectangular make-fcpolar
          fcreal-part fcimag-part
-         fcmagnitude fcangle)
+         fcmagnitude fcangle
+         fcconjugate)
 
 (define (fc [z : Number]) : Float-Complex
   (make-flrectangular (fl (real-part z))(fl (imag-part z))))
@@ -79,6 +81,10 @@ lg* lg/ lgprod lg+ lg- lgsum lg1+ lg1-
            (flinfinite? (fcimag-part z)))
       +nan.0
       (angle z)))
+
+(define (fcconjugate [z : Float-Complex]) : Float-Complex
+  (make-fcrectangular (fcreal-part z)
+                      (fl± (fcimag-part z))))
 
 #|
 TODO
@@ -431,19 +437,158 @@ TODO
 ;;**************************************************************************************************
 ;; exp
 ;;**************************************************************************************************
+(provide fcexp)
+
 (define (fcexp [z : Float-Complex]) : Float-Complex
   (cond
-    [(eq? (fcreal-part z) -inf.0) 0.0+0.0i]
+    [(fcnan? z) +nan.0+nan.0i]
+    [(and (eqv? (fcreal-part z) -inf.0) (flinfinite? (fcimag-part z)))
+     ;; we don't really know the direction of zero, but do we realy care enough to make this nan?
+     0.0+0.0i]
+    [(flzero? (fcimag-part z))
+     ;; error in typed-racket optimizer
+     (make-fcrectangular (flexp (fcreal-part z)) (fcimag-part z))]
     [else (exp z)]))
 
 ;;**************************************************************************************************
 ;; log
 ;;**************************************************************************************************
+(provide fclog)
+
 (define (fclog [z : Float-Complex]) : Float-Complex
-  (define l (log z))
-  (if(and (flzero? (fcimag-part z)) (fl<= (fcreal-part z) 0.0))
-     (make-fcrectangular (fcreal-part l) pi)
-     l))
+  (cond
+    ;; racket assumes that (angle +inf.0+inf.0i) = pi/4, I disagree
+    [(and (flinfinite? (fcreal-part z))(flinfinite? (fcimag-part z)))
+     +nan.0+nan.0i]
+    ;; racket makes a difference between (log -x-0.0i) and (log -x+0.0i) in y±pi×i
+    ;; this is admittely nicer than always using +pi×i (both are right ...)
+    [else (log z)]))
+
+;;**************************************************************************************************
+;; expt
+;;**************************************************************************************************
+(provide fcexpt)
+(define (fcexpt [zb : Float-Complex][ze : Float-Complex]) : Float-Complex
+  ;; this is the same as racket does, but since flcos/sin etc are more accurate than the standard
+  ;; implementation, this gives accurate results
+  ;; as with exp, the sign of zero is important!
+  (define mag (fcmagnitude zb)) (define ang (fcangle zb))
+  (define c (fcreal-part ze)) (define d (fcimag-part ze))
+  (define nm (fl* (flexpt mag c)
+                  (flexp (fl± (fl* ang d)))))
+  (define na (if (flzero? d)
+                 (fl* ang c)
+                 (fl+ (fl* (fllog mag) d)
+                      (fl* ang c))))
+  (cond
+    [(and (flzero? nm) (flinfinite? na))
+     ;; prefer wrong sign zero over nan
+     0.0+0.0i]
+    [else
+     (make-fcrectangular (fl* nm (flcos na))
+                         (fl* nm (flsin na)))]))
+(define (fcexpt2 [zb : Float-Complex][ze : Float-Complex]) : Float-Complex
+  ;; this is the same as racket does, but since flcos/sin etc are more accurate than the standard
+  ;; implementation, this gives accurate results
+  ;; as with exp, the sign of zero is important!
+  (define mag (fcmagnitude zb)) (define ang (fcangle zb))
+  (define c (fcreal-part ze)) (define d (fcimag-part ze))
+  (define nm (fl* (flexpt mag c)
+                  (flexp (fl± (fl* ang d)))))
+  (define-values (nac nas)
+    (if (flzero? d)
+        (let ([t (fl* ang c)]) (values (flcos t)(flsin t)))
+        (let ([t1 (fl* (fllog mag) d)]
+              [t2 (fl* ang c)])
+          (values
+           (fl+ (fl* (flcos t1) (flcos t2))
+                (fl* (flsin t1) (flsin t2)))
+           (fl+ (fl* (flsin t1) (flcos t2))
+                (fl* (flcos t1) (flsin t2)))))))
+(println (list mag ang nm nac nas))
+  (cond
+    [(and (flzero? nm) (flnan? nac))
+     ;; prefer wrong sign zero over nan
+     0.0+0.0i]
+    [else
+     (make-fcrectangular (fl* nm nac)
+                         (fl* nm nas))]))
+(define (fcexpt3 [zb : Float-Complex][ze : Float-Complex]) : Float-Complex
+  ;; this is the same as racket does, but since flcos/sin etc are more accurate than the standard
+  ;; implementation, this gives accurate results
+  ;; as with exp, the sign of zero is important!
+  (define mag (fcmagnitude zb)) (define ang (fcangle zb))
+  (define a (fcreal-part zb)) (define b (fcimag-part zb))
+  (define c (fcreal-part ze)) (define d (fcimag-part ze))
+  (define nm (fl* (flexpt mag c)
+                  (flexp (fl± (fl* ang d)))))
+  (define na (if (flzero? d)
+                 (fl* ang c)
+                 (let ()
+                   (define xa (flmin a b))
+                   (define ya (flmax a b))
+                   (define-values (u1 u2)   (fl2/ xa 0.0 ya 0.0))
+                   (define-values (uu1 uu2) (fl2sqr u1 u2))
+                   (define-values (up1 up2) (fl2+ uu1 uu2 1.0 0.0))
+                   (define-values (us1 us2) (fl2sqrt up1 up2))
+                   (define-values (mg1 mg2) (fl2* us1 us2 ya 0.0))
+                   (define-values (lg1 lg2) (fl2log mg1 mg2))
+                   
+                   (define-values (*11 *12) (fl2* lg1 lg2 d 0.0))
+                   (define-values (*21 *22) (fl2* ang 0.0 c 0.0))
+                   (define-values (p1 p2) (fl2+ *11 *12 *21 *22))
+                   p1)))
+(println (list mag ang nm na))
+  (cond
+    [(and (flzero? nm) (flinfinite? na))
+     ;; prefer wrong sign zero over nan
+     0.0+0.0i]
+    [else
+     (make-fcrectangular (fl* nm (flcos na))
+                         (fl* nm (flsin na)))]))
+
+(define (fcexpt4 [zb : Float-Complex][ze : Float-Complex]) : Float-Complex
+  (define (make-ans [ans : (Listof Float-Complex)]) : Float-Complex
+    (fc/ (fcsum ans) (fc (length ans))))
+  (for/fold ([ans : (Listof Float-Complex) '()]
+             #:result (make-ans ans))
+            ([i (in-range 20)]
+             #:break (and (not (empty? ans))
+                          (fc= (make-ans ans) (make-ans (cdr ans)))))
+    (define z* (fc (expt 2 i)))
+    (cons (fc* (fcexpt3 (fc* zb z*) ze) (fcexpt3 (fc/ z*) ze))
+          ans)))
+
+(define (bffcexpt [zb : Float-Complex][ze : Float-Complex]) : Float-Complex
+  (local-require math/bigfloat)
+  (define a (bf (fcreal-part zb))) (define b (bf (fcimag-part zb)))
+  (define c (bf (fcreal-part ze))) (define d (bf (fcimag-part ze)))
+  (define mag (bfhypot a b))
+  (define ang (bfatan2 b a))
+  (define nm (bf* (bfexpt mag c)
+                  (bfexp (bf- (bf* ang d)))))
+  (define-values (nac nas)
+    (if (bf= 0.bf d)
+        (let ([t (bf* ang c)]) (values (bfcos t) (bfsin t)))
+        (let ([t1 (bf* (bflog mag) d)]
+              [t2 (bf* ang c)])
+          (println (list t1 t2))
+          (values
+           (bf+ (bf* (bfcos t1)(bfcos t2))
+                (bf* (bfsin t1)(bfsin t2)))
+           (bf+ (bf* (bfsin t1)(bfcos t2))
+                (bf* (bfcos t1)(bfsin t2)))))))
+  (cond
+    [else
+     (make-fcrectangular (bigfloat->flonum (bf* nm nac))
+                         (bigfloat->flonum (bf* nm nas)))]))
+(module+ test
+  (check-equal? (fcexpt4 -2.1507959208093305e-308+2.3283599054444013e-106i -7.155603820248143e-68+0.633029814350625i)
+                -0.3697574373443255+0.012235065503937041i)
+  (check-equal? (fcexpt4  1.417835141498884e-308-2.296288150836904e-307i 5.5208913900880785e-155+1.8417515613935356i)
+                15.680404792287854+3.6956975682622084i)
+  (check-equal? (fcexpt4  2.424576983608611e-269+6.532320935117516e-135i -5.922315769101014e-287-0.23895875485177157i)
+                0.006099829715045764-1.4554960242395032i))
 
 ;;**************************************************************************************************
 ;; Error checking

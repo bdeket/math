@@ -48,9 +48,17 @@
                       (define e (fculp-error z b))
                       (if (flnan? e) +inf.0 e))
                     as))
+    (define pl (if print-limit
+                   (if (list? print-limit)
+                       (if (equal? (length print-limit) len)
+                           print-limit
+                           (raise-argument-error 'fc-tester "same length as fctcs-to-check" print-limit))
+                       (make-list len pl))
+                   (make-list len #f)))
     (for/list ([H (in-list Hs)]
-               [e (in-list es)])
-      (when (and print-limit (<= print-limit e)) (println (list zs b (map cons as es))))
+               [e (in-list es)]
+               [pl (in-list pl)])
+      (when (and pl (<= pl e)) (println (list zs b (map cons as es))))
       
       (define H*
         (if (and (not (empty? (cdr es))) (< e (apply min (remove e es))))
@@ -192,13 +200,48 @@
   (print-it (fc-tester (list / (λ (z) (/ 1.+0.i z)) fc/) (λ (z) (mybc/ 1.0+0.0i z)) 1 #:names '(1/_all 1+0i/_all fc1/_all) #:rational? #f))
   )
 
-(module+ main
+#;(module+ main
+  (define (myexp z)
+    (cond
+      [(fcnan? z) +nan.0+nan.0i]
+      [(and (flinfinite? (fcimag-part z)) (eqv? (fcreal-part z) +inf.0))
+       +nan.0+nan.0i]
+      [else ((b bcexp 1) z)]))
+  (define (mylog z)
+    (define a ((b bclog 1) z))
+    (cond
+      [(and (or (fl< (fcreal-part z) 0.0) (eq? (fcreal-part z) -0.0)) (eq? (fcimag-part z) -0.0))
+       (make-fcrectangular (real-part a) (- pi))]
+      [(and (flinfinite? (fcreal-part z)) (flinfinite? (fcimag-part z)))
+       +nan.0+nan.0i]
+      [else a]))
+  
+  
   "exp"
-  (print-it (fc-tester (list exp) (b bcexp 1) 1 #:names '(log_rat) #:rational? #t))
-  (print-it (fc-tester (list exp) (b bcexp 1) 1 #:names '(log_all) #:rational? #f #:print-limit 1000))
+  (print-it (fc-tester (list exp fcexp) myexp 1 #:names '(exp_rat fcexp_rat) #:rational? #t))
+  (print-it (fc-tester (list exp fcexp) myexp 1 #:names '(exp_all fcexp_all) #:rational? #f))
   "log"
-  (print-it (fc-tester (list log) (b bclog 1) 1 #:names '(log_rat) #:rational? #t #:print-limit 1000))
-  (print-it (fc-tester (list log) (b bclog 1) 1 #:names '(log_all) #:rational? #f #:print-limit 1000))
+  (print-it (fc-tester (list log fclog) mylog 1 #:names '(log_rat fclog_rat) #:rational? #t))
+  (print-it (fc-tester (list log fclog) mylog 1 #:names '(log_all fclog_all) #:rational? #f))
+  )
+
+(module+ main
+  (define (myexpt z1 z2)
+    (cond
+      [(and (fcinfinite? z1) (not (fczero? z2)))
+       (if (fl< (real-part z2) 0.0) 0.0+0.0i +nan.0+nan.0i)]
+      #;[(eq? (fcimag-part z1) -0.0)
+       (fcconjugate ((b bcexpt 2) z1 z2))]
+      [else ((b bcexpt 2) z1 z2)]))
+  "expt"
+  (print-it (fc-tester (list expt fcexpt) myexpt 2 #:names '(expt_rat fcexpt_rat) #:rational? #t #:print-limit '(#f 1000)))
+  (print-it (fc-tester (list expt fcexpt) myexpt 2 #:names '(expt_all fcexpt_all) #:rational? #f #:print-limit '(#f 1000)))
+  "sqr"
+  (print-it (fc-tester (list sqr) (b bcsqr 1) 1 #:names '(sqr_rat) #:rational? #t))
+  (print-it (fc-tester (list sqr) (b bcsqr 1) 1 #:names '(sqr_all) #:rational? #f))
+  "sqrt"
+  (print-it (fc-tester (list sqrt) (b bcsqrt 1) 1 #:names '(sqrt_rat) #:rational? #t))
+  (print-it (fc-tester (list sqrt) (b bcsqrt 1) 1 #:names '(sqrt_all) #:rational? #f))
   )
 
 #;(module+ main
